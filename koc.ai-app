@@ -1,0 +1,82 @@
+import streamlit as st
+import google.generativeai as genai
+import pandas as pd
+from datetime import datetime
+import io
+import xlsxwriter
+
+# --- CẤU HÌNH TRANG WEB ---
+st.set_page_config(page_title="KOC AI Content Generator", page_icon="🚀", layout="wide")
+
+# --- TIÊU ĐỀ ỨNG DỤNG ---
+st.title("🚀 KOC AI: Cỗ Máy Tạo Kịch Bản Bán Hàng")
+st.markdown("---")
+
+# --- CỘT BÊN TRÁI: NHẬP LIỆU ---
+with st.sidebar:
+    st.header("⚙️ Nhập thông tin")
+    
+    api_key = st.text_input("Nhập Google API Key của bạn:", type="password", help="Lấy miễn phí tại aistudio.google.com")
+    
+    st.markdown("---")
+    product_name = st.text_input("Tên sản phẩm", "Ví dụ: Nồi chiên không dầu Sunhouse")
+    product_features = st.text_area("Đặc điểm nổi bật (USP)", "Ví dụ: Giảm 80% mỡ, dung tích 6L, màn hình cảm ứng, đang sale 50%")
+    target_audience = st.text_input("Khách hàng mục tiêu", "Ví dụ: Mẹ bỉm sữa, Nhân viên văn phòng")
+    
+    submit_button = st.button("✨ TẠO KẾ HOẠCH NGAY", type="primary")
+
+# --- CỘT BÊN PHẢI: KẾT QUẢ ---
+if submit_button:
+    if not api_key:
+        st.error("⚠️ Vui lòng nhập API Key để bắt đầu!")
+    else:
+        try:
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            with st.spinner('🤖 AI đang tư duy và viết kịch bản... Vui lòng chờ 10s...'):
+                prompt = f"""
+                Bạn là Top KOC Reviewer. Lập kế hoạch 5 NGÀY nội dung bán sản phẩm:
+                - Sản phẩm: {product_name}
+                - Đặc điểm: {product_features}
+                - Khách hàng: {target_audience}
+                
+                Yêu cầu: Tạo bảng dữ liệu 5 dòng, ngăn cách bởi dấu "|". 
+                Cột: Ngày | Chủ Đề | Hook (3s đầu) | Nội dung chính | Caption Facebook | Hashtag
+                Không viết lời dẫn. Dòng đầu là tiêu đề.
+                """
+                
+                response = model.generate_content(prompt)
+                result_text = response.text
+                
+                lines = [line for line in result_text.split('\n') if "|" in line]
+                if len(lines) > 1:
+                    # Sửa lỗi hiển thị bằng cách làm sạch dữ liệu
+                    data = [x.split('|') for x in lines[1:]]
+                    columns = [x.strip() for x in lines[0].split('|')]
+                    # Xóa các cột trống nếu có do split thừa
+                    if len(columns) > len(data[0]):
+                        columns = columns[:len(data[0])]
+                    
+                    df = pd.DataFrame(data, columns=columns)
+                    
+                    st.success("✅ Đã xong! Kế hoạch content của bạn đây:")
+                    st.dataframe(df, use_container_width=True)
+                    
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df.to_excel(writer, index=False, sheet_name='KeHoachKOC')
+                    processed_data = output.getvalue()
+                    
+                    st.download_button(
+                        label="📥 Tải File Excel Kế Hoạch Về Máy",
+                        data=processed_data,
+                        file_name=f"KeHoach_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                else:
+                    st.error("AI trả về dữ liệu lỗi. Hãy thử lại!")
+                    st.text(result_text)
+                    
+        except Exception as e:
+            st.error(f"Có lỗi xảy ra: {e}")
